@@ -1,0 +1,59 @@
+name: Build and Upload Cython Wheel
+
+on:
+  push:
+    branches:
+      - '*'
+    tags:
+      - '*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v2
+
+    - name: Set up Docker
+      run: |
+        docker pull python:3.10-buster
+
+    - name: Run build in Docker
+      run: |
+        docker run --rm -v ${{ github.workspace }}:/workspace -w /workspace python:3.10-buster /bin/bash -c "
+          set -x
+          apt-get update && apt-get install -y git
+          git clone --depth 1 https://github.com/cython/cython.git
+          cd cython
+          pip install --upgrade wheel setuptools pip
+          pip wheel .
+          ls -alt 
+        "
+
+    - name: install and run auditwheel
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y patchelf
+        pip install auditwheel
+        cd cython
+        auditwheel repair --plat manylinux_2_17_x86_64 --wheel-dir . *.whl
+
+    - name: Upload wheel as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: cython-wheel
+        path: cython/*.whl
+
+    - name: Create draft release
+      if: ${{ startsWith(github.ref, 'refs/tags/v-') }}
+      id: create_release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref }}
+        files: cython/*.whl
+        draft: true
+        prerelease: false
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+
